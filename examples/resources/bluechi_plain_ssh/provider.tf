@@ -1,7 +1,8 @@
 terraform {
   required_providers {
     bluechi = {
-      source = "bluechi/bluechi"
+      source  = "bluechi/bluechi"
+      version = "1.0.0"
     }
   }
 }
