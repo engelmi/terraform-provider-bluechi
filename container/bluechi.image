@@ -13,7 +13,7 @@ RUN dnf upgrade --refresh -y --nodocs && \
     -y && \
     dnf -y clean all
 
-RUN dnf copr enable -y mperina/hirte-snapshot
+RUN dnf copr enable -y @centos-automotive-sig/bluechi-snapshot
 RUN dnf install \
         --nogpgcheck \
         --nodocs \
@@ -29,11 +29,6 @@ RUN dnf install \
 
 RUN dnf -y clean all
 
-# add public key to it
-RUN echo "ssh-rsa ..." >> ~/.ssh/authorized_keys
-
 RUN systemctl enable sshd
-
-EXPOSE 22
 
 CMD [ "/sbin/init" ]

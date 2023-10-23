@@ -1,0 +1,19 @@
+FROM quay.io/centos/centos:stream9
+
+RUN dnf upgrade --refresh -y --nodocs && \
+    dnf install --nodocs \
+        policycoreutils-python-utils \
+        selinux-policy \
+        systemd \
+        systemd-devel \
+        openssh-server \
+        openssh-clients \
+        dnf-plugin-config-manager \
+    -y && \
+    dnf -y clean all
+
+RUN dnf -y clean all
+
+RUN systemctl enable sshd
+
+CMD [ "/sbin/init" ]
