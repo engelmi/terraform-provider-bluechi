@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	version string = "0.0.0-beta"
+	version string = "1.0.0"
 )
 
 func main() {
@@ -20,9 +20,9 @@ func main() {
 	flag.Parse()
 
 	opts := providerserver.ServeOpts{
-		// TODO: Update this string with the published name of the provider
-		Address: "registry.terraform.io/eclipse-bluechi/bluechi",
-		Debug:   debug,
+		Address:         "registry.terraform.io/bluechi/bluechi",
+		Debug:           debug,
+		ProtocolVersion: 6,
 	}
 
 	err := providerserver.Serve(context.Background(), provider.New(version), opts)
