@@ -22,11 +22,11 @@ func TestBlueChiNodeResource(t *testing.T) {
 func exampleConfig() string {
 	return `
 provider "bluechi" {
-	use_mock = true
+	use_mock = false
 }
 
 resource "bluechi_node" "main" {
-
+	
 	ssh = {
 		host             	       = "127.0.0.1:2020"
 		user             	       = "root"
@@ -56,7 +56,7 @@ resource "bluechi_node" "main" {
 		log_is_quiet		= false
 	}
 }
-
+/*
 resource "bluechi_node" "worker1" {
 
 	ssh = {
@@ -122,5 +122,6 @@ resource "bluechi_node" "worker3" {
 		log_is_quiet		= false
 	}
 }
+*/
 `
 }

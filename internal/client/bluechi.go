@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	BlueChiControllerConfdDirectory string = "/etc/bluechi/controller.conf.d/"
+	BlueChiControllerConfdDirectory string = "/etc/bluechi/bluechi.conf.d/"
 	BlueChiAgentConfdDirectory      string = "/etc/bluechi/agent.conf.d/"
 )
 
@@ -19,7 +19,7 @@ type BlueChiControllerConfig struct {
 }
 
 func (cfg BlueChiControllerConfig) Serialize() string {
-	res := "[bluechi-controller]\n"
+	res := "[bluechi]\n"
 	res += "AllowedNodeNames=" + strings.Join(cfg.AllowedNodeNames, ",\n\t")
 	res += "\n"
 	if cfg.ManagerPort != nil {

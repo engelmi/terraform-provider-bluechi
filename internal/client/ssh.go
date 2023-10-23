@@ -24,6 +24,49 @@ type SSHClient struct {
 	conn *ssh.Client
 }
 
+func (c *SSHClient) newSSHSession() (*ssh.Session, error) {
+	if c == nil || c.conn == nil {
+		return nil, fmt.Errorf("not connected")
+	}
+
+	return c.conn.NewSession()
+}
+
+func (c *SSHClient) isServiceInstalled(service string) (bool, error) {
+	session, err := c.newSSHSession()
+	if err != nil {
+		return false, err
+	}
+	defer session.Close()
+
+	output, err := session.Output(fmt.Sprintf("systemctl list-unit-files %s", service))
+	if err != nil {
+		if serr, ok := err.(*ssh.ExitError); ok && serr.ExitStatus() == 1 {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to list unit files: %s", string(output))
+	}
+
+	return strings.Contains(string(output), service), nil
+}
+
+func (c *SSHClient) determineOS() (string, error) {
+	session, err := c.newSSHSession()
+	if err != nil {
+		return "", err
+	}
+	defer session.Close()
+
+	output, err := session.Output("cat /etc/os-release | grep -w ID=")
+	if err != nil {
+		return "", fmt.Errorf("failed to determine os: %s", string(output))
+	}
+
+	os := strings.ReplaceAll(string(output), "ID=", "")
+	os = strings.ReplaceAll(os, "\"", "")
+	return strings.TrimSpace(os), nil
+}
+
 func (c *SSHClient) Connect() error {
 	var err error
 	var authMethods []ssh.AuthMethod
@@ -98,157 +141,177 @@ func (c *SSHClient) Disconnect() error {
 	return nil
 }
 
-func (c *SSHClient) CreateControllerConfig(file string, cfg BlueChiControllerConfig) error {
-	if c == nil || c.conn == nil {
-		return fmt.Errorf("not connected")
+func (c *SSHClient) InstallBlueChi(installCtrl bool, installAgent bool) error {
+	needsInstallCtrl := false
+	needsInstallAgent := false
+
+	if installCtrl {
+		isInstalled, err := c.isServiceInstalled("bluechi.service")
+		if err != nil {
+			return err
+		}
+		needsInstallCtrl = !isInstalled
+	}
+	if installAgent {
+		isInstalled, err := c.isServiceInstalled("bluechi-agent.service")
+		if err != nil {
+			return err
+		}
+		needsInstallAgent = !isInstalled
 	}
 
-	session, err := c.conn.NewSession()
+	if !needsInstallCtrl && !needsInstallAgent {
+		return nil
+	}
+
+	os, err := c.determineOS()
+	if err != nil {
+		return err
+	}
+
+	if os == "autosd" || os == "centos" {
+		packagesToInstall := ""
+		if needsInstallCtrl {
+			packagesToInstall += " bluechi bluechi-ctl "
+		}
+		if needsInstallAgent {
+			packagesToInstall += " bluechi-agent"
+		}
+
+		session, err := c.newSSHSession()
+		if err != nil {
+			return err
+		}
+		defer session.Close()
+
+		output, err := session.Output(fmt.Sprintf("sudo dnf install -y %s", packagesToInstall))
+		if err != nil {
+			return fmt.Errorf("failed to install packages '%s': %s", packagesToInstall, output)
+		}
+	}
+
+	return nil
+}
+
+func (c *SSHClient) CreateControllerConfig(file string, cfg BlueChiControllerConfig) error {
+	session, err := c.newSSHSession()
 	if err != nil {
 		return err
 	}
 	defer session.Close()
 
-	cmd := fmt.Sprintf("echo \"%s\" > %s", cfg.Serialize(), BlueChiControllerConfdDirectory+file)
-	_, err = session.Output(cmd)
+	cmd := fmt.Sprintf("sudo bash -c 'echo \"%s\" > %s'", cfg.Serialize(), BlueChiControllerConfdDirectory+file)
+	output, err := session.Output(cmd)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create controller config file: %s", string(output))
 	}
 
 	return nil
 }
 
 func (c *SSHClient) RemoveControllerConfig(file string) error {
-	if c == nil || c.conn == nil {
-		return fmt.Errorf("not connected")
-	}
-
-	session, err := c.conn.NewSession()
+	session, err := c.newSSHSession()
 	if err != nil {
 		return err
 	}
 	defer session.Close()
 
-	cmd := fmt.Sprintf("rm %s", BlueChiControllerConfdDirectory+file)
-	_, err = session.Output(cmd)
+	cmd := fmt.Sprintf("sudo rm %s", BlueChiControllerConfdDirectory+file)
+	output, err := session.Output(cmd)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to remove controller config file: %s", string(output))
 	}
 
 	return nil
 }
 
 func (c *SSHClient) RestartBlueChiController() error {
-	if c == nil || c.conn == nil {
-		return fmt.Errorf("not connected")
-	}
-
-	session, err := c.conn.NewSession()
+	session, err := c.newSSHSession()
 	if err != nil {
 		return err
 	}
 	defer session.Close()
 
-	_, err = session.Output("systemctl start bluechi-controller")
+	output, err := session.Output("sudo systemctl start bluechi")
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to restart controller service: %s", string(output))
 	}
 
 	return nil
 }
 
 func (c *SSHClient) StopBlueChiController() error {
-	if c == nil || c.conn == nil {
-		return fmt.Errorf("not connected")
-	}
-
-	session, err := c.conn.NewSession()
+	session, err := c.newSSHSession()
 	if err != nil {
 		return err
 	}
 	defer session.Close()
 
-	_, err = session.Output("systemctl stop bluechi-controller")
+	output, err := session.Output("sudo systemctl stop bluechi")
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to stop controller service: %s", string(output))
 	}
 
 	return nil
 }
 
 func (c *SSHClient) CreateAgentConfig(file string, cfg BlueChiAgentConfig) error {
-	if c == nil || c.conn == nil {
-		return fmt.Errorf("not connected")
-	}
-
-	session, err := c.conn.NewSession()
+	session, err := c.newSSHSession()
 	if err != nil {
 		return err
 	}
 	defer session.Close()
 
-	cmd := fmt.Sprintf("echo \"%s\" > %s", cfg.Serialize(), BlueChiAgentConfdDirectory+file)
-	_, err = session.Output(cmd)
+	cmd := fmt.Sprintf("sudo bash -c 'echo \"%s\" > %s'", cfg.Serialize(), BlueChiAgentConfdDirectory+file)
+	output, err := session.Output(cmd)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create agent config file: %s", string(output))
 	}
 
 	return nil
 }
 
 func (c *SSHClient) RemoveAgentConfig(file string) error {
-	if c == nil || c.conn == nil {
-		return fmt.Errorf("not connected")
-	}
-
-	session, err := c.conn.NewSession()
+	session, err := c.newSSHSession()
 	if err != nil {
 		return err
 	}
 	defer session.Close()
 
-	cmd := fmt.Sprintf("rm %s", BlueChiAgentConfdDirectory+file)
-	_, err = session.Output(cmd)
+	cmd := fmt.Sprintf("sudo rm %s", BlueChiAgentConfdDirectory+file)
+	output, err := session.Output(cmd)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to remove agent config file: %s", string(output))
 	}
 
 	return nil
 }
 
 func (c *SSHClient) RestartBlueChiAgent() error {
-	if c == nil || c.conn == nil {
-		return fmt.Errorf("not connected")
-	}
-
-	session, err := c.conn.NewSession()
+	session, err := c.newSSHSession()
 	if err != nil {
 		return err
 	}
 	defer session.Close()
 
-	_, err = session.Output("systemctl start bluechi-agent")
+	output, err := session.Output("sudo systemctl start bluechi-agent")
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to restart agent service: %s", string(output))
 	}
 
 	return nil
 }
 
 func (c *SSHClient) StopBlueChiAgent() error {
-	if c == nil || c.conn == nil {
-		return fmt.Errorf("not connected")
-	}
-
-	session, err := c.conn.NewSession()
+	session, err := c.newSSHSession()
 	if err != nil {
 		return err
 	}
 	defer session.Close()
 
-	_, err = session.Output("systemctl stop bluechi-agent")
+	output, err := session.Output("sudo systemctl stop bluechi-agent")
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to stop agent service: %s", string(output))
 	}
 
 	return nil
@@ -275,6 +338,10 @@ func (c *SSHClientMock) Connect() error {
 }
 
 func (c *SSHClientMock) Disconnect() error {
+	return nil
+}
+
+func (c *SSHClientMock) InstallBlueChi(installCtrl bool, installAgent bool) error {
 	return nil
 }
 

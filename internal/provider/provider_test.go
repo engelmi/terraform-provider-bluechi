@@ -10,7 +10,7 @@ import (
 )
 
 var testAccProtoV6ProviderFactories = map[string]func() (tfprotov6.ProviderServer, error){
-	"bluechi": providerserver.NewProtocol6WithError(blueChiProvider.New("0.0.0-beta")()),
+	"bluechi": providerserver.NewProtocol6WithError(blueChiProvider.New("1.0.0")()),
 }
 
 func testAccPreCheck(t *testing.T) {}

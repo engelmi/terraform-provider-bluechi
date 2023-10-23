@@ -268,6 +268,15 @@ func (r *BlueChiNodeResource) Create(ctx context.Context, req resource.CreateReq
 	data.Id = types.StringValue(id)
 
 	ctrlConf := data.BlueChiController
+	agentConf := data.BlueChiAgent
+
+	err = sshClient.InstallBlueChi(ctrlConf != nil, agentConf != nil)
+	if err != nil {
+		tflog.Error(ctx, "Failed to install BlueChi")
+		resp.Diagnostics.AddError(fmt.Sprintf("Failed to install BlueChi: %v", err), err.Error())
+		return
+	}
+
 	if ctrlConf != nil {
 		ctrlConfFile := assembleConfigFileName("ctrl")
 		err := sshClient.CreateControllerConfig(ctrlConfFile, data.BlueChiController.ToConfig())
@@ -286,7 +295,6 @@ func (r *BlueChiNodeResource) Create(ctx context.Context, req resource.CreateReq
 		}
 	}
 
-	agentConf := data.BlueChiAgent
 	if agentConf != nil {
 		agentConfFile := assembleConfigFileName("agent")
 		err := sshClient.CreateAgentConfig(agentConfFile, data.BlueChiAgent.ToConfig())

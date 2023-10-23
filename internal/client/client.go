@@ -4,6 +4,8 @@ type Client interface {
 	Connect() error
 	Disconnect() error
 
+	InstallBlueChi(bool, bool) error
+
 	CreateControllerConfig(string, BlueChiControllerConfig) error
 	RemoveControllerConfig(string) error
 	RestartBlueChiController() error
