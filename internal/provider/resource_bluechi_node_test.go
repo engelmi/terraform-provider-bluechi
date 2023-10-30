@@ -56,7 +56,7 @@ resource "bluechi_node" "main" {
 		log_is_quiet		= false
 	}
 }
-/*
+
 resource "bluechi_node" "worker1" {
 
 	ssh = {
@@ -122,6 +122,6 @@ resource "bluechi_node" "worker3" {
 		log_is_quiet		= false
 	}
 }
-*/
+
 `
 }

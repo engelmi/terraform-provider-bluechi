@@ -21,7 +21,8 @@ type SSHClient struct {
 	PKPath                string
 	InsecureIgnoreHostKey bool
 
-	conn *ssh.Client
+	conn        *ssh.Client
+	connHasRoot bool
 }
 
 func (c *SSHClient) newSSHSession() (*ssh.Session, error) {
@@ -30,6 +31,22 @@ func (c *SSHClient) newSSHSession() (*ssh.Session, error) {
 	}
 
 	return c.conn.NewSession()
+}
+
+func (c *SSHClient) hasRootPrivileges() (bool, error) {
+	session, err := c.newSSHSession()
+	if err != nil {
+		return false, err
+	}
+	defer session.Close()
+
+	output, err := session.Output("whoami")
+	if err != nil {
+		return false, fmt.Errorf("failed to determine if root: (%s, %s)", err.Error(), string(output))
+	}
+
+	c.connHasRoot = (string(output) == "root")
+	return c.connHasRoot, nil
 }
 
 func (c *SSHClient) isServiceInstalled(service string) (bool, error) {
@@ -124,6 +141,11 @@ func (c *SSHClient) Connect() error {
 		return err
 	}
 
+	_, err = c.hasRootPrivileges()
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -146,7 +168,7 @@ func (c *SSHClient) InstallBlueChi(installCtrl bool, installAgent bool) error {
 	needsInstallAgent := false
 
 	if installCtrl {
-		isInstalled, err := c.isServiceInstalled("bluechi.service")
+		isInstalled, err := c.isServiceInstalled("bluechi-controller.service")
 		if err != nil {
 			return err
 		}
@@ -172,7 +194,7 @@ func (c *SSHClient) InstallBlueChi(installCtrl bool, installAgent bool) error {
 	if os == "autosd" || os == "centos" {
 		packagesToInstall := ""
 		if needsInstallCtrl {
-			packagesToInstall += " bluechi bluechi-ctl "
+			packagesToInstall += " bluechi-controller bluechi-ctl "
 		}
 		if needsInstallAgent {
 			packagesToInstall += " bluechi-agent"
@@ -184,7 +206,11 @@ func (c *SSHClient) InstallBlueChi(installCtrl bool, installAgent bool) error {
 		}
 		defer session.Close()
 
-		output, err := session.Output(fmt.Sprintf("sudo dnf install -y %s", packagesToInstall))
+		sudoPrefix := ""
+		if c.connHasRoot {
+			sudoPrefix = "sudo"
+		}
+		output, err := session.Output(fmt.Sprintf("%s dnf install -y %s", sudoPrefix, packagesToInstall))
 		if err != nil {
 			return fmt.Errorf("failed to install packages '%s': %s", packagesToInstall, output)
 		}
@@ -200,7 +226,11 @@ func (c *SSHClient) CreateControllerConfig(file string, cfg BlueChiControllerCon
 	}
 	defer session.Close()
 
-	cmd := fmt.Sprintf("sudo bash -c 'echo \"%s\" > %s'", cfg.Serialize(), BlueChiControllerConfdDirectory+file)
+	sudoPrefix := ""
+	if c.connHasRoot {
+		sudoPrefix = "sudo"
+	}
+	cmd := fmt.Sprintf("%s bash -c 'echo \"%s\" > %s'", sudoPrefix, cfg.Serialize(), BlueChiControllerConfdDirectory+file)
 	output, err := session.Output(cmd)
 	if err != nil {
 		return fmt.Errorf("failed to create controller config file: %s", string(output))
@@ -216,7 +246,11 @@ func (c *SSHClient) RemoveControllerConfig(file string) error {
 	}
 	defer session.Close()
 
-	cmd := fmt.Sprintf("sudo rm %s", BlueChiControllerConfdDirectory+file)
+	sudoPrefix := ""
+	if c.connHasRoot {
+		sudoPrefix = "sudo"
+	}
+	cmd := fmt.Sprintf("%s rm %s", sudoPrefix, BlueChiControllerConfdDirectory+file)
 	output, err := session.Output(cmd)
 	if err != nil {
 		return fmt.Errorf("failed to remove controller config file: %s", string(output))
@@ -232,7 +266,11 @@ func (c *SSHClient) RestartBlueChiController() error {
 	}
 	defer session.Close()
 
-	output, err := session.Output("sudo systemctl start bluechi")
+	sudoPrefix := ""
+	if c.connHasRoot {
+		sudoPrefix = "sudo"
+	}
+	output, err := session.Output(fmt.Sprintf("%ssystemctl start bluechi-controller", sudoPrefix))
 	if err != nil {
 		return fmt.Errorf("failed to restart controller service: %s", string(output))
 	}
@@ -247,7 +285,11 @@ func (c *SSHClient) StopBlueChiController() error {
 	}
 	defer session.Close()
 
-	output, err := session.Output("sudo systemctl stop bluechi")
+	sudoPrefix := ""
+	if c.connHasRoot {
+		sudoPrefix = "sudo"
+	}
+	output, err := session.Output(fmt.Sprintf("%s systemctl stop bluechi-controller", sudoPrefix))
 	if err != nil {
 		return fmt.Errorf("failed to stop controller service: %s", string(output))
 	}
@@ -262,7 +304,11 @@ func (c *SSHClient) CreateAgentConfig(file string, cfg BlueChiAgentConfig) error
 	}
 	defer session.Close()
 
-	cmd := fmt.Sprintf("sudo bash -c 'echo \"%s\" > %s'", cfg.Serialize(), BlueChiAgentConfdDirectory+file)
+	sudoPrefix := ""
+	if c.connHasRoot {
+		sudoPrefix = "sudo"
+	}
+	cmd := fmt.Sprintf("%s bash -c 'echo \"%s\" > %s'", sudoPrefix, cfg.Serialize(), BlueChiAgentConfdDirectory+file)
 	output, err := session.Output(cmd)
 	if err != nil {
 		return fmt.Errorf("failed to create agent config file: %s", string(output))
@@ -278,7 +324,11 @@ func (c *SSHClient) RemoveAgentConfig(file string) error {
 	}
 	defer session.Close()
 
-	cmd := fmt.Sprintf("sudo rm %s", BlueChiAgentConfdDirectory+file)
+	sudoPrefix := ""
+	if c.connHasRoot {
+		sudoPrefix = "sudo"
+	}
+	cmd := fmt.Sprintf("%s rm %s", sudoPrefix, BlueChiAgentConfdDirectory+file)
 	output, err := session.Output(cmd)
 	if err != nil {
 		return fmt.Errorf("failed to remove agent config file: %s", string(output))
@@ -294,7 +344,11 @@ func (c *SSHClient) RestartBlueChiAgent() error {
 	}
 	defer session.Close()
 
-	output, err := session.Output("sudo systemctl start bluechi-agent")
+	sudoPrefix := ""
+	if c.connHasRoot {
+		sudoPrefix = "sudo"
+	}
+	output, err := session.Output(fmt.Sprintf("%s systemctl start bluechi-agent", sudoPrefix))
 	if err != nil {
 		return fmt.Errorf("failed to restart agent service: %s", string(output))
 	}
@@ -309,7 +363,11 @@ func (c *SSHClient) StopBlueChiAgent() error {
 	}
 	defer session.Close()
 
-	output, err := session.Output("sudo systemctl stop bluechi-agent")
+	sudoPrefix := ""
+	if c.connHasRoot {
+		sudoPrefix = "sudo"
+	}
+	output, err := session.Output(fmt.Sprintf("%s systemctl stop bluechi-agent", sudoPrefix))
 	if err != nil {
 		return fmt.Errorf("failed to stop agent service: %s", string(output))
 	}
